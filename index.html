@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-<title>Solar System — 3D Explorer</title>
+<title>Celestial Explorer</title>
 <style>
   :root {
     --ink: rgba(235, 240, 248, 0.92);
@@ -405,7 +405,7 @@
 <div id="labels"></div>
 
 <div class="ui" id="brand">
-  <h1>Sol · 3D</h1>
+  <h1>Celestial Explorer</h1>
   <div id="date" class="mono"></div>
   <div id="datePop">
     <label>Jump to date · UTC</label>
@@ -498,7 +498,7 @@
 <button class="ui" id="tourExit">End tour</button>
 
 <div class="ui" id="hint">Drag to orbit · Scroll to zoom — all the way out</div>
-<div class="ui" id="loading"><span>Sol · 3D</span></div>
+<div class="ui" id="loading"><span>Celestial Explorer</span></div>
 
 <script>
   // ---- Boot supervisor ----------------------------------------------------
@@ -547,7 +547,7 @@
       if (!l) return;
       l.innerHTML =
         '<div style="text-align:center;max-width:360px;line-height:1.8">' +
-          '<div style="font-size:10px;letter-spacing:0.4em;text-transform:uppercase;color:rgba(235,240,248,0.45)">Sol · 3D</div>' +
+          '<div style="font-size:10px;letter-spacing:0.4em;text-transform:uppercase;color:rgba(235,240,248,0.45)">Celestial Explorer</div>' +
           '<div style="font-size:11px;color:rgba(235,240,248,0.6);margin:14px 0 18px">' + msg + '</div>' +
           '<button id="reloadBtn" style="border:1px solid rgba(235,240,248,0.25);border-radius:3px;padding:9px 18px;color:rgba(235,240,248,0.92);background:transparent;cursor:pointer;letter-spacing:0.08em">Reload</button>' +
         '</div>';
