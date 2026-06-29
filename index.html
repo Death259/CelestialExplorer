@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Celestial Explorer</title>
+<style>
+  :root {
+    --ink: rgba(235, 240, 248, 0.92);
+    --dim: rgba(235, 240, 248, 0.45);
+    --faint: rgba(235, 240, 248, 0.22);
+    --pane: rgba(8, 12, 20, 0.95);
+    --line: rgba(235, 240, 248, 0.12);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; background: #01030a; }
+  body {
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    color: var(--ink);
+    -webkit-font-smoothing: antialiased;
+    user-select: none;
+  }
+  #gl { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+  .mono { font-family: "SF Mono", ui-monospace, Menlo, Consolas, monospace; }
+
+  /* ---- projected 3D labels ---- */
+  #labels { position: fixed; inset: 0; pointer-events: none; overflow: hidden; }
+  .label { position: absolute; top: 0; left: 0; pointer-events: auto; cursor: pointer; white-space: nowrap; }
+  .label i {
+    display: block; width: 5px; height: 5px; border-radius: 50%;
+    border: 1px solid var(--dim); margin-left: -3px; margin-top: -3px;
+    transition: border-color 0.2s, background 0.2s;
+  }
+  .label span {
+    position: absolute; left: 9px; top: -7px;
+    font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase;
+    color: var(--dim); transition: color 0.2s;
+  }
+  .label:hover i { border-color: var(--ink); background: var(--ink); }
+  .label:hover span { color: var(--ink); }
+  .label.moon span { font-size: 9px; color: var(--faint); }
+  .label.moon i { width: 3px; height: 3px; }
+  .label.comet span { color: rgba(150, 200, 230, 0.6); font-style: italic; text-transform: none; letter-spacing: 0.1em; }
+  .label.comet i { border-color: rgba(150, 200, 230, 0.5); border-radius: 0; transform: rotate(45deg); }
+  .label.minor span { font-size: 9px; color: rgba(200, 190, 170, 0.55); letter-spacing: 0.12em; }
+  .label.minor i { width: 3px; height: 3px; border-color: rgba(200, 190, 170, 0.5); }
+  .conlabel {
+    position: absolute; top: 0; left: 0; pointer-events: none; white-space: nowrap;
+    font-size: 10px; letter-spacing: 0.32em; text-transform: uppercase;
+    color: rgba(150, 170, 205, 0.75); transition: opacity 0.4s;
+  }
+
+  /* ---- far-field labels (stars, probes, deep sky, galaxy) ---- */
+  .farlabel { position: absolute; top: 0; left: 0; pointer-events: none; white-space: nowrap; }
+  .farlabel.click { pointer-events: auto; cursor: pointer; }
+  .farlabel i { display: block; width: 4px; height: 4px; border-radius: 50%; margin: -2px 0 0 -2px; background: rgba(235, 240, 248, 0.4); }
+  .farlabel span {
+    position: absolute; left: 9px; top: -7px;
+    font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase;
+    color: var(--dim); transition: color 0.2s;
+  }
+  .farlabel em { display: block; font-style: normal; font-size: 8.5px; letter-spacing: 0.1em; color: var(--faint); margin-top: 3px; text-transform: none; }
+  .farlabel.click:hover span { color: var(--ink); }
+  .farlabel.star i { background: rgba(255, 225, 190, 0.7); }
+  .farlabel.star span { color: rgba(255, 230, 205, 0.6); }
+  .farlabel.probe i { background: none; border: 1px solid rgba(255, 210, 140, 0.8); border-radius: 0; width: 5px; height: 5px; transform: rotate(45deg); }
+  .farlabel.probe span { color: rgba(255, 215, 150, 0.75); }
+  .farlabel.edge i { background: rgba(120, 195, 220, 0.7); }
+  .farlabel.edge span { color: rgba(150, 210, 230, 0.7); }
+  .farlabel.deep i { width: 5px; height: 5px; background: rgba(195, 185, 250, 0.7); }
+  .farlabel.deep span { color: rgba(205, 200, 245, 0.7); }
+  .farlabel.gal i { display: none; }
+  .farlabel.gal span { left: 0; transform: translateX(-50%); letter-spacing: 0.3em; color: rgba(160, 180, 215, 0.8); }
+  .farlabel.here i { display: none; }
+  .farlabel.here span { left: 0; top: 16px; transform: translateX(-50%); font-weight: 700; letter-spacing: 0.24em; color: rgba(195, 215, 255, 0.95); }
+
+  /* ---- chrome ---- */
+  .ui { position: fixed; z-index: 10; }
+  #brand { top: 18px; left: 20px; line-height: 1.5; }
+  #brand h1 { font-size: 11px; font-weight: 500; letter-spacing: 0.34em; text-transform: uppercase; }
+  #date { font-size: 14px; font-weight: 700; letter-spacing: 0.06em; color: var(--ink); margin-top: 7px; cursor: pointer; display: inline-block; transition: color 0.2s; }
+  #date:hover { color: #fff; }
+  #date::after { content: "▾"; font-size: 9px; color: var(--dim); margin-left: 7px; vertical-align: 1px; }
+
+  /* ---- date / time picker popover ---- */
+  #datePop {
+    position: absolute; top: 56px; left: 0; width: 232px; z-index: 20;
+    background: var(--pane); border: 1px solid var(--line); border-radius: 4px;
+    backdrop-filter: blur(14px); padding: 13px; display: none;
+  }
+  #datePop.open { display: block; }
+  #datePop label { display: block; font-size: 9px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--dim); margin-bottom: 7px; }
+  #datePop input[type=date], #datePop input[type=time] {
+    width: 100%; appearance: none; background: rgba(235,240,248,0.05);
+    border: 1px solid var(--line); border-radius: 3px; color: var(--ink);
+    font: 500 12px/1 "SF Mono", ui-monospace, Menlo, monospace;
+    padding: 8px 9px; margin-bottom: 8px; color-scheme: dark;
+  }
+  #datePop input:focus { outline: none; border-color: var(--dim); }
+  #datePop .row2 { display: flex; gap: 8px; margin-top: 4px; }
+  #datePop .row2 button {
+    flex: 1; border: 1px solid var(--line); border-radius: 3px; padding: 8px 0; color: var(--dim);
+  }
+  #datePop .row2 button#dateGo { background: var(--ink); color: #04070f; border-color: var(--ink); }
+  #datePop .row2 button:hover { color: var(--ink); }
+  #datePop .row2 button#dateGo:hover { color: #04070f; }
+  #alt { font-size: 10px; color: var(--dim); letter-spacing: 0.06em; margin-top: 2px; }
+  #scaleNote { font-size: 9px; color: var(--dim); letter-spacing: 0.05em; margin-top: 6px; max-width: 230px; opacity: 0; transition: opacity 0.8s; line-height: 1.6; }
+
+  #topRight { top: 18px; right: 20px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: flex-end; max-width: calc(100vw - 210px); }
+  button {
+    appearance: none; background: none; border: none; color: var(--dim);
+    font: 500 10px/1 "Helvetica Neue", Helvetica, sans-serif;
+    letter-spacing: 0.16em; text-transform: uppercase;
+    padding: 7px 11px; cursor: pointer; transition: color 0.2s, background 0.2s;
+  }
+  button:hover { color: var(--ink); }
+  #tourBtn { border: 1px solid var(--line); border-radius: 3px; }
+
+  /* ---- events menu ---- */
+  #eventsWrap { position: relative; }
+  #eventsBtn { border: 1px solid var(--line); border-radius: 3px; }
+  #eventsBtn::after { content: ""; display: inline-block; width: 4px; height: 4px; margin-left: 7px; margin-bottom: 2px; border-right: 1px solid currentColor; border-bottom: 1px solid currentColor; transform: rotate(45deg); vertical-align: middle; }
+  #eventsWrap.open #eventsBtn { color: var(--ink); border-color: var(--dim); }
+  #eventsMenu {
+    position: absolute; top: calc(100% + 8px); right: 0; width: 252px;
+    background: var(--pane); border: 1px solid var(--line); border-radius: 4px;
+    backdrop-filter: blur(14px); padding: 6px;
+    display: none; max-height: calc(100vh - 120px); overflow-y: auto;
+  }
+  #eventsWrap.open #eventsMenu { display: block; }
+  .evCat {
+    font-size: 8.5px; letter-spacing: 0.24em; text-transform: uppercase;
+    color: var(--faint); padding: 12px 10px 5px; pointer-events: none;
+  }
+  .evCat:first-child { padding-top: 5px; }
+  .evRow { padding: 9px 10px; cursor: pointer; border-radius: 3px; transition: background 0.15s; }
+  .evRow:hover { background: rgba(235, 240, 248, 0.06); }
+  .evRow .nm { font-size: 11px; letter-spacing: 0.04em; color: var(--ink); }
+  .evRow .dt { font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--dim); margin-top: 3px; font-family: "SF Mono", ui-monospace, Menlo, monospace; }
+  .evRow:hover .dt { color: var(--ink); }
+
+  /* ---- event caption (shown on jump) ---- */
+  #eventCap {
+    bottom: 86px; left: 50%; transform: translateX(-50%);
+    max-width: 520px; width: calc(100vw - 48px); text-align: center;
+    font-size: 12.5px; line-height: 1.7; color: var(--ink);
+    text-shadow: 0 1px 12px rgba(0, 0, 0, 0.9);
+    opacity: 0; transition: opacity 0.7s; pointer-events: none;
+  }
+  #eventCap.show { opacity: 1; }
+  #eventCap b { display: block; font-size: 10px; letter-spacing: 0.24em; text-transform: uppercase; color: var(--dim); margin-bottom: 8px; font-weight: 500; }
+  body.touring #eventCap { opacity: 0; }
+
+  /* ---- missions menu ---- */
+  #missionsWrap { position: relative; }
+  #missionsBtn { border: 1px solid var(--line); border-radius: 3px; }
+  #missionsBtn::after { content: ""; display: inline-block; width: 4px; height: 4px; margin-left: 7px; margin-bottom: 2px; border-right: 1px solid currentColor; border-bottom: 1px solid currentColor; transform: rotate(45deg); vertical-align: middle; }
+  #missionsWrap.open #missionsBtn { color: var(--ink); border-color: var(--dim); }
+  #missionsMenu {
+    position: absolute; top: calc(100% + 8px); right: 0; width: 240px;
+    background: var(--pane); border: 1px solid var(--line); border-radius: 4px;
+    backdrop-filter: blur(14px); padding: 6px; display: none;
+  }
+  #missionsWrap.open #missionsMenu { display: block; }
+  .miRow { padding: 10px; cursor: pointer; border-radius: 3px; transition: background 0.15s; }
+  .miRow:hover { background: rgba(235, 240, 248, 0.06); }
+  .miRow .nm { font-size: 11.5px; letter-spacing: 0.04em; color: var(--ink); }
+  .miRow .sb { font-size: 9.5px; letter-spacing: 0.06em; color: var(--dim); margin-top: 4px; line-height: 1.5; }
+  .miRow .sb b { color: rgba(255,180,120,0.9); font-weight: 500; }
+
+  /* ---- spacecraft label + trajectory mission HUD ---- */
+  .label.craft i { width: 6px; height: 6px; margin-left: -3px; margin-top: -3px; border: none; background: #ffce8a; box-shadow: 0 0 8px 2px rgba(255,180,110,0.8); border-radius: 50%; }
+  .label.craft span { color: #ffce8a; font-size: 9.5px; letter-spacing: 0.2em; }
+  #missionHud {
+    top: 50%; left: 20px; transform: translate(-16px, -50%); width: 234px;
+    background: var(--pane); border: 1px solid var(--line); border-radius: 4px;
+    backdrop-filter: blur(14px); padding: 16px 16px 14px;
+    opacity: 0; pointer-events: none;
+  }
+  #missionHud.open { opacity: 1; pointer-events: auto; transform: translate(0, -50%); }
+  .mhTop { display: flex; justify-content: space-between; align-items: baseline; }
+  .mhName { font-size: 14px; font-weight: 500; letter-spacing: 0.2em; text-transform: uppercase; }
+  #mhExit { position: absolute; top: 8px; right: 6px; font-size: 12px; padding: 6px 9px; }
+  .mhObj { font-size: 9.5px; letter-spacing: 0.08em; color: var(--dim); margin-top: 6px; text-transform: uppercase; }
+  .mhPhase {
+    font-size: 12px; letter-spacing: 0.04em; color: #ffce8a; margin: 14px 0 12px;
+    padding-left: 11px; border-left: 2px solid rgba(255,180,110,0.6);
+  }
+  .mhRow { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border-top: 1px solid var(--line); font-size: 10.5px; }
+  .mhRow span { color: var(--dim); letter-spacing: 0.04em; }
+  .mhRow b { font-weight: 500; font-family: "SF Mono", ui-monospace, Menlo, monospace; }
+  #mhFollow {
+    width: 100%; margin-top: 14px; padding: 9px 0; border: 1px solid var(--line); border-radius: 3px;
+    color: var(--dim); letter-spacing: 0.16em;
+  }
+  #mhFollow:hover { color: var(--ink); border-color: var(--dim); }
+  #mhFollow.on { background: rgba(255,180,110,0.16); border-color: rgba(255,180,110,0.5); color: #ffce8a; }
+  body.touring #missionHud { opacity: 0; pointer-events: none; }
+
+  /* ---- dropdown menus (view / style) ---- */
+  #viewWrap, #styleWrap { position: relative; }
+  #viewBtn, #styleBtn { border: 1px solid var(--line); border-radius: 3px; }
+  #styleBtn::after { content: ""; display: inline-block; width: 4px; height: 4px; margin-left: 7px; margin-bottom: 2px; border-right: 1px solid currentColor; border-bottom: 1px solid currentColor; transform: rotate(45deg); vertical-align: middle; }
+  #viewWrap.open #viewBtn, #styleWrap.open #styleBtn { color: var(--ink); border-color: var(--dim); }
+  #viewMenu, #styleMenu {
+    position: absolute; top: calc(100% + 8px); right: 0; width: 176px;
+    background: var(--pane); border: 1px solid var(--line); border-radius: 4px;
+    backdrop-filter: blur(14px); padding: 6px;
+    display: none; max-height: calc(100vh - 120px); overflow-y: auto;
+  }
+  #styleMenu { width: 212px; }
+  #styleMenu .viewRow i { border-radius: 50%; }
+  /* ---- look panel: section labels + sliders ---- */
+  .tkLabel { font-size: 8.5px; letter-spacing: 0.24em; text-transform: uppercase; color: var(--faint); padding: 9px 10px 5px; }
+  .tkLabel:first-child { padding-top: 4px; }
+  .tkRow { padding: 10px 11px 12px; }
+  .tkHead { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 10px; }
+  .tkHead span { font-size: 11px; letter-spacing: 0.04em; color: var(--ink); }
+  .tkHead b { font-size: 10px; font-weight: 500; color: var(--dim); font-family: "SF Mono", ui-monospace, Menlo, monospace; }
+  .tkSlider { appearance: none; -webkit-appearance: none; width: 100%; height: 13px; margin: 0; background: transparent; cursor: ew-resize; }
+  .tkSlider::-webkit-slider-runnable-track { height: 1px; background: var(--line); }
+  .tkSlider::-webkit-slider-thumb { -webkit-appearance: none; width: 11px; height: 11px; border-radius: 50%; background: var(--ink); border: none; margin-top: -5px; }
+  .tkSlider::-moz-range-track { height: 1px; background: var(--line); }
+  .tkSlider::-moz-range-thumb { width: 11px; height: 11px; border-radius: 50%; background: var(--ink); border: none; }
+  #viewWrap.open #viewMenu, #styleWrap.open #styleMenu { display: block; }
+  .viewRow {
+    display: flex; align-items: center; gap: 10px; padding: 8px 9px;
+    cursor: pointer; border-radius: 3px;
+    font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--dim); transition: color 0.15s, background 0.15s;
+  }
+  .viewRow:hover { background: rgba(235, 240, 248, 0.06); color: var(--ink); }
+  .viewRow i {
+    width: 10px; height: 10px; flex: none; border-radius: 2px;
+    border: 1px solid var(--dim);
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .viewRow.on { color: var(--ink); }
+  .viewRow.on i { background: var(--ink); border-color: var(--ink); }
+  body.touring #viewWrap { opacity: 0; pointer-events: none; }
+  body.touring #tourBtn { color: #04070f; background: var(--ink); }
+
+  /* ---- bodies (planet) dropdown ---- */
+  #bodiesWrap { position: relative; }
+  #bodiesBtn { border: 1px solid var(--line); border-radius: 3px; }
+  #bodiesBtn::after { content: ""; display: inline-block; width: 4px; height: 4px; margin-left: 7px; margin-bottom: 2px; border-right: 1px solid currentColor; border-bottom: 1px solid currentColor; transform: rotate(45deg); vertical-align: middle; }
+  #bodiesWrap.open #bodiesBtn { color: var(--ink); border-color: var(--dim); }
+  #bodiesMenu {
+    position: absolute; top: calc(100% + 8px); right: 0; width: 190px;
+    background: var(--pane); border: 1px solid var(--line); border-radius: 4px;
+    backdrop-filter: blur(14px); padding: 6px;
+    display: none; max-height: calc(100vh - 120px); overflow-y: auto;
+  }
+  #bodiesWrap.open #bodiesMenu { display: block; }
+  #nav { display: flex; flex-direction: column; gap: 1px; }
+  #nav button {
+    text-align: left; width: 100%; padding: 8px 10px; border-radius: 3px;
+    letter-spacing: 0.12em; transition: background 0.15s, color 0.15s;
+  }
+  #nav button:hover { background: rgba(235, 240, 248, 0.06); color: var(--ink); }
+  #nav button.comet { color: rgba(150, 200, 230, 0.55); font-style: italic; text-transform: none; letter-spacing: 0.04em; }
+  #nav button.comet:hover, #nav button.comet.on { color: rgba(180, 220, 245, 0.95); background: rgba(235, 240, 248, 0.06); }
+  #nav button.minor { color: rgba(200, 190, 170, 0.6); text-transform: none; letter-spacing: 0.04em; }
+  #nav button.minor:hover, #nav button.minor.on { color: rgba(225, 215, 195, 0.95); background: rgba(235, 240, 248, 0.06); }
+  #nav button.on { color: var(--ink); background: rgba(235, 240, 248, 0.09); }
+
+  /* keep an open dropdown above the search row (which comes later in the DOM) */
+  #bodiesWrap, #eventsWrap, #missionsWrap, #viewWrap, #styleWrap { position: relative; }
+  #bodiesWrap.open, #eventsWrap.open, #missionsWrap.open, #viewWrap.open, #styleWrap.open { z-index: 30; }
+
+  /* ---- search ---- */
+  #searchWrap { flex-basis: 100%; display: flex; justify-content: flex-end; position: relative; z-index: 5; }
+  #searchBox { position: relative; width: 230px; }
+  .srIcon { position: absolute; left: 11px; top: 50%; width: 9px; height: 9px; margin-top: -5px; border: 1.4px solid var(--dim); border-radius: 50%; pointer-events: none; transition: border-color 0.2s; }
+  .srIcon::after { content: ""; position: absolute; left: 7px; top: 8px; width: 4px; height: 1.4px; background: var(--dim); transform: rotate(45deg); transform-origin: left center; transition: background 0.2s; }
+  #searchBox:focus-within .srIcon { border-color: var(--ink); }
+  #searchBox:focus-within .srIcon::after { background: var(--ink); }
+  #searchInput {
+    width: 100%; appearance: none; background: rgba(235, 240, 248, 0.05);
+    border: 1px solid var(--line); border-radius: 3px; color: var(--ink);
+    font: 500 11px/1 "Helvetica Neue", Helvetica, sans-serif; letter-spacing: 0.06em;
+    padding: 8px 11px 8px 28px; transition: border-color 0.2s, background 0.2s;
+  }
+  #searchInput::placeholder { color: var(--faint); letter-spacing: 0.08em; }
+  #searchInput:focus { outline: none; border-color: var(--dim); background: rgba(235, 240, 248, 0.08); }
+  #searchResults {
+    position: absolute; top: calc(100% + 8px); right: 0; width: 252px;
+    background: var(--pane); border: 1px solid var(--line); border-radius: 4px;
+    backdrop-filter: blur(14px); padding: 6px; display: none;
+    max-height: calc(100vh - 170px); overflow-y: auto;
+  }
+  #searchResults.open { display: block; }
+  .srRow { display: flex; align-items: center; gap: 11px; padding: 8px 10px; cursor: pointer; border-radius: 3px; transition: background 0.12s; }
+  .srRow:hover, .srRow.active { background: rgba(235, 240, 248, 0.08); }
+  .srDot { width: 7px; height: 7px; flex: none; border-radius: 50%; background: rgba(235, 240, 248, 0.55); }
+  .srDot.moon { width: 5px; height: 5px; background: rgba(235, 240, 248, 0.34); }
+  .srDot.comet { width: 6px; height: 6px; border-radius: 0; transform: rotate(45deg); background: rgba(150, 200, 230, 0.75); }
+  .srDot.dwarf { background: rgba(205, 190, 165, 0.85); }
+  .srDot.asteroid { width: 6px; height: 6px; background: rgba(170, 160, 145, 0.8); }
+  .srDot.star { background: rgba(255, 225, 190, 0.85); }
+  .srDot.probe { width: 6px; height: 6px; border-radius: 0; transform: rotate(45deg); background: none; border: 1px solid rgba(255, 210, 140, 0.85); }
+  .srDot.deep { background: rgba(195, 185, 250, 0.8); }
+  .srDot.edge { background: rgba(120, 195, 220, 0.8); }
+  .srDot.gal { background: rgba(160, 180, 215, 0.85); }
+  .srTxt { min-width: 0; }
+  .srName { font-size: 11.5px; letter-spacing: 0.04em; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .srType { font-size: 9px; letter-spacing: 0.13em; text-transform: uppercase; color: var(--dim); margin-top: 3px; }
+  .srRow:hover .srType, .srRow.active .srType { color: var(--ink); }
+  .srEmpty { padding: 12px 11px; font-size: 10.5px; line-height: 1.6; color: var(--dim); letter-spacing: 0.06em; }
+  body.touring #searchWrap { opacity: 0; pointer-events: none; }
+
+  /* ---- info card ---- */
+  #card {
+    top: 50%; right: 20px; transform: translate(16px, -50%); width: 270px;
+    background: var(--pane); border: 1px solid var(--line); border-radius: 4px;
+    backdrop-filter: blur(14px); padding: 18px 18px 16px;
+    opacity: 0; pointer-events: none; transition: opacity 0.35s, transform 0.35s;
+  }
+  #card.open { opacity: 1; pointer-events: auto; transform: translate(0, -50%); }
+  #cardName { font-size: 17px; font-weight: 500; letter-spacing: 0.22em; text-transform: uppercase; margin-bottom: 10px; }
+  #cardBlurb { font-size: 11.5px; line-height: 1.65; color: var(--dim); margin-bottom: 14px; }
+  #cardFacts .row { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border-top: 1px solid var(--line); font-size: 10.5px; }
+  #cardFacts .row span { color: var(--dim); letter-spacing: 0.04em; }
+  #cardFacts .row b { font-weight: 500; text-align: right; }
+  #cardClose { position: absolute; top: 8px; right: 6px; font-size: 12px; padding: 6px 9px; }
+  #cardFly { display: none; margin-top: 14px; width: 100%; justify-content: center; font-size: 10.5px; letter-spacing: 0.18em; text-transform: uppercase; padding: 9px; }
+  #cardFly.show { display: flex; }
+
+  /* ---- time controls ---- */
+  #timebar {
+    bottom: 26px; left: 50%; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 4px;
+    background: var(--pane); border: 1px solid var(--line); border-radius: 4px;
+    backdrop-filter: blur(14px); padding: 4px 8px;
+  }
+  #timebar button { padding: 8px 10px; min-width: 34px; }
+  #speed { font-size: 10px; color: var(--ink); min-width: 70px; text-align: center; letter-spacing: 0.08em; }
+
+  /* ---- speed slider ---- */
+  #speedCtl { position: relative; width: 200px; height: 26px; margin: 0 6px 0 8px; display: flex; align-items: center; }
+  #speedSlider {
+    appearance: none; -webkit-appearance: none;
+    width: 100%; height: 26px; margin: 0; background: transparent;
+    cursor: ew-resize; position: relative; z-index: 2;
+  }
+  #speedSlider::-webkit-slider-runnable-track { height: 1px; background: var(--line); }
+  #speedSlider::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 11px; height: 11px; border-radius: 50%;
+    background: var(--ink); border: none; margin-top: -5px;
+  }
+  #speedSlider::-moz-range-track { height: 1px; background: var(--line); }
+  #speedSlider::-moz-range-thumb { width: 11px; height: 11px; border-radius: 50%; background: var(--ink); border: none; }
+  #speedTicks { position: absolute; left: 5.5px; right: 5.5px; top: 50%; height: 0; z-index: 1; pointer-events: none; }
+  #speedTicks i { position: absolute; top: -3px; width: 1px; height: 7px; background: var(--dim); transform: translateX(-0.5px); }
+
+  #scrub {
+    bottom: 0; left: 0; right: 0; height: 18px; cursor: ew-resize;
+    background: linear-gradient(to top, rgba(235,240,248,0.05), transparent);
+  }
+  #scrub::after {
+    content: ""; position: absolute; left: 0; right: 0; bottom: 8px; height: 1px;
+    background: var(--line);
+  }
+  #scrub:hover::after { background: var(--dim); }
+
+  /* ---- tour ---- */
+  #tourCaption {
+    bottom: 86px; left: 50%; transform: translateX(-50%);
+    max-width: 560px; width: calc(100vw - 48px); text-align: center;
+    font-size: 13px; line-height: 1.7; color: var(--ink);
+    text-shadow: 0 1px 12px rgba(0, 0, 0, 0.9);
+    opacity: 0; transition: opacity 0.8s; pointer-events: none;
+  }
+  #tourCaption.show { opacity: 1; }
+  #tourExit { bottom: 26px; right: 20px; border: 1px solid var(--line); border-radius: 3px; display: none; }
+  body.touring #tourExit { display: block; }
+  body.touring #timebar, body.touring #bodiesWrap, body.touring #card { opacity: 0; pointer-events: none; }
+
+  /* ---- hint / loading ---- */
+  #hint {
+    bottom: 86px; left: 50%; transform: translateX(-50%);
+    font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--dim);
+    transition: opacity 1.2s; pointer-events: none; text-align: center;
+  }
+  #hint.fade, #loading.fade { opacity: 0; pointer-events: none; }
+  body.touring #hint { opacity: 0; }
+  #loading {
+    inset: 0; background: #01030a; display: flex; align-items: center; justify-content: center;
+    transition: opacity 1s; z-index: 50;
+  }
+  #loading span { font-size: 10px; letter-spacing: 0.4em; text-transform: uppercase; color: var(--dim); animation: pulse 1.6s infinite; }
+  @keyframes pulse { 50% { opacity: 0.3; } }
+
+  /* launcher + scrim are phone-only; hidden on desktop */
+  #menuFab, #sheetScrim { display: none; }
+
+  @media (max-width: 768px) {
+    /* ---- launcher pill (top-right) ---- */
+    #menuFab {
+      display: inline-flex; align-items: center; gap: 8px; position: fixed;
+      top: 18px; right: 16px; z-index: 65;
+      background: var(--pane); border: 1px solid var(--line); border-radius: 3px;
+      color: var(--ink); font: 500 10px/1 "Helvetica Neue", Helvetica, sans-serif;
+      letter-spacing: 0.16em; text-transform: uppercase; padding: 10px 13px;
+      backdrop-filter: blur(14px); cursor: pointer;
+    }
+    #menuFab .bars { position: relative; display: inline-block; width: 13px; height: 9px; }
+    #menuFab .bars::before, #menuFab .bars::after, #menuFab .bars span {
+      content: ""; position: absolute; left: 0; right: 0; height: 1.4px;
+      background: currentColor; transition: transform 0.28s, opacity 0.2s;
+    }
+    #menuFab .bars::before { top: 0; }
+    #menuFab .bars span { top: 50%; margin-top: -0.7px; }
+    #menuFab .bars::after { bottom: 0; }
+    body.sheet-open #menuFab .bars::before { transform: translateY(3.8px) rotate(45deg); }
+    body.sheet-open #menuFab .bars::after { transform: translateY(-3.8px) rotate(-45deg); }
+    body.sheet-open #menuFab .bars span { opacity: 0; }
+
+    /* ---- scrim behind the sheet ---- */
+    #sheetScrim {
+      display: block; position: fixed; inset: 0; z-index: 55;
+      background: rgba(2, 5, 12, 0.55); opacity: 0; pointer-events: none;
+      transition: opacity 0.3s;
+    }
+    body.sheet-open #sheetScrim { opacity: 1; pointer-events: auto; }
+
+    /* ---- top-right cluster becomes a bottom sheet ---- */
+    #topRight {
+      top: auto; left: 0; right: 0; bottom: 0; max-width: none;
+      flex-direction: column; flex-wrap: nowrap; align-items: stretch;
+      gap: 0; justify-content: flex-start;
+      background: var(--pane); border-top: 1px solid var(--line);
+      border-radius: 14px 14px 0 0; backdrop-filter: blur(18px);
+      padding: 14px 16px calc(20px + env(safe-area-inset-bottom));
+      max-height: 82vh; overflow-y: auto; z-index: 60;
+      transform: translateY(106%); transition: transform 0.36s cubic-bezier(0.4, 0, 0.2, 1);
+      box-shadow: 0 -18px 50px rgba(0, 0, 0, 0.5);
+    }
+    body.sheet-open #topRight { transform: translateY(0); }
+    #topRight::before {
+      content: ""; align-self: center; flex: none; width: 36px; height: 4px;
+      border-radius: 99px; background: var(--line); margin-bottom: 12px;
+    }
+
+    /* search pinned to the top of the sheet, full width */
+    #searchWrap { order: -1; flex-basis: auto; display: block; margin-bottom: 4px; z-index: auto; }
+    #searchBox { width: 100%; }
+
+    /* triggers + tour as full-width list rows */
+    #bodiesWrap, #eventsWrap, #missionsWrap, #styleWrap, #viewWrap { width: 100%; position: static; }
+    #bodiesBtn, #eventsBtn, #missionsBtn, #styleBtn, #viewBtn, #tourBtn {
+      display: flex; align-items: center; justify-content: space-between;
+      width: 100%; text-align: left; padding: 16px 4px; min-height: 54px;
+      font-size: 12px; border: none; border-bottom: 1px solid var(--line);
+      border-radius: 0;
+    }
+    #tourBtn { color: var(--ink); }
+
+    /* open category flows inline (accordion) instead of floating over the page */
+    #bodiesWrap.open #bodiesMenu, #eventsWrap.open #eventsMenu,
+    #missionsWrap.open #missionsMenu, #styleWrap.open #styleMenu,
+    #viewWrap.open #viewMenu, #searchResults {
+      position: static; left: auto; right: auto; top: auto; bottom: auto;
+      width: auto; max-height: 44vh; overflow-y: auto;
+      border: none; border-radius: 0; background: rgba(235, 240, 248, 0.03);
+      backdrop-filter: none; padding: 4px 6px 12px;
+    }
+  }
+  @media (max-width: 720px) {
+    #card { width: calc(100vw - 32px); right: 16px; top: auto; bottom: 96px; transform: translateY(10px); }
+    #card.open { transform: translateY(0); }
+    #speedCtl { width: 130px; }
+    #scaleNote { display: none; }
+  }
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<div id="labels"></div>
+
+<div class="ui" id="brand">
+  <h1>Celestial Explorer</h1>
+  <div id="date" class="mono"></div>
+  <div id="datePop">
+    <label>Jump to date · UTC</label>
+    <input id="dateInput" type="date" min="1000-01-01" max="2999-12-31" />
+    <input id="timeInput" type="time" />
+    <div class="row2">
+      <button id="dateNow">Now</button>
+      <button id="dateGo">Go</button>
+    </div>
+  </div>
+  <div id="alt" class="mono"></div>
+  <div id="scaleNote">* Planetary distances and sizes are true scale. Interstellar distances are compressed for navigation.</div>
+</div>
+
+<button id="menuFab" aria-label="Open menu"><span class="bars"><span></span></span><span class="fabLbl">Menu</span></button>
+<div id="sheetScrim"></div>
+
+<div class="ui" id="topRight">
+  <div id="bodiesWrap">
+    <button id="bodiesBtn">Bodies</button>
+    <div id="bodiesMenu"><div id="nav"></div></div>
+  </div>
+  <div id="eventsWrap">
+    <button id="eventsBtn">Events</button>
+    <div id="eventsMenu"></div>
+  </div>
+  <div id="missionsWrap">
+    <button id="missionsBtn">Missions</button>
+    <div id="missionsMenu"></div>
+  </div>
+  <div id="styleWrap">
+    <button id="styleBtn">Look</button>
+    <div id="styleMenu">
+      <div class="tkLabel">Style</div>
+      <div class="viewRow" data-mode="photoreal"><i></i><span>Photoreal</span></div>
+      <div class="viewRow on" data-mode="cinematic"><i></i><span>Cinematic</span></div>
+      <div class="tkLabel">Render</div>
+      <div class="tkRow">
+        <div class="tkHead"><span>Bloom</span><b id="tkBloomVal">1.0</b></div>
+        <input id="tkBloom" class="tkSlider" type="range" min="0" max="2.5" step="0.05" value="1" />
+      </div>
+      <div class="tkRow">
+        <div class="tkHead"><span>Star brightness</span><b id="tkStarVal">1.0</b></div>
+        <input id="tkStar" class="tkSlider" type="range" min="0.2" max="2" step="0.05" value="1" />
+      </div>
+    </div>
+  </div>
+  <div id="viewWrap">
+    <button id="viewBtn">View</button>
+    <div id="viewMenu"></div>
+  </div>
+  <button id="tourBtn">Tour</button>
+  <div id="searchWrap">
+    <div id="searchBox">
+      <span class="srIcon"></span>
+      <input id="searchInput" type="text" placeholder="Search bodies…  ( / )" autocomplete="off" spellcheck="false" />
+      <div id="searchResults"></div>
+    </div>
+  </div>
+</div>
+
+<div class="ui" id="card">
+  <button id="cardClose">✕</button>
+  <div id="cardName"></div>
+  <div id="cardBlurb"></div>
+  <div id="cardFacts"></div>
+  <button id="cardFly">Fly closer →</button>
+</div>
+
+<div class="ui" id="missionHud">
+  <button id="mhExit">✕</button>
+  <div class="mhTop"><span class="mhName">Artemis II</span></div>
+  <div class="mhObj">Orion · NASA OEM trajectory</div>
+  <div class="mhPhase" id="mhPhase">—</div>
+  <div class="mhRow"><span>Mission time</span><b id="mhMet">—</b></div>
+  <div class="mhRow"><span>From Earth</span><b id="mhDist">—</b></div>
+  <button id="mhFollow">Follow Orion</button>
+</div>
+
+<div class="ui" id="timebar">
+  <button id="playBtn">❚❚</button>
+  <div id="speedCtl">
+    <input id="speedSlider" type="range" min="0" max="6" step="0.01" value="1" />
+    <div id="speedTicks"></div>
+  </div>
+  <span id="speed"></span>
+  <button id="nowBtn">Now</button>
+</div>
+<div class="ui" id="scrub" title="Drag to scrub time"></div>
+
+<div class="ui" id="tourCaption"></div>
+<div class="ui" id="eventCap"></div>
+<button class="ui" id="tourExit">End tour</button>
+
+<div class="ui" id="hint">Drag to orbit · Scroll to zoom — all the way out</div>
+<div class="ui" id="loading"><span>Celestial Explorer</span></div>
+
+<script>
+  // ---- Boot supervisor ----------------------------------------------------
+  // The app sets window.SolarApp once its modules finish loading. If that never
+  // happens, the usual cause is a stale preview session: the short-lived token
+  // authorizing ./js/vendor/*.js has expired, so the engine fetch fails until the
+  // page is reloaded with a fresh one. We auto-recover with AT MOST ONE silent
+  // reload, then fall back to a manual prompt.
+  //
+  // The "only retry once" guard is the URL hash (#reboot): a hash survives a
+  // reload and is never sent to the server, so — unlike sessionStorage, which can
+  // reset in a sandboxed preview and cause an endless reload loop — it can NEVER
+  // trip a loop.
+  (function () {
+    var GUARD = 'reboot';
+    var booted = function () { return !!window.SolarApp; };
+    var alreadyRetried = location.hash.indexOf(GUARD) !== -1;
+    var sawLoadError = false;
+
+    // Flag failed fetches of engine-critical scripts (the stale-token symptom).
+    // Ignore react/babel/tweaks — those don't block the 3D view, so their failure
+    // must never trigger a reload of an otherwise-healthy app.
+    function critical(url) {
+      return /\/js\//.test(url || '') && !/react|babel|tweaks/i.test(url || '');
+    }
+    addEventListener('error', function (e) {
+      var t = e && e.target;
+      if (t && (t.tagName === 'SCRIPT' || t.tagName === 'LINK') && critical(t.src || t.href)) {
+        sawLoadError = true;
+      }
+    }, true);
+    addEventListener('unhandledrejection', function (e) {
+      var m = e && e.reason && (e.reason.message || String(e.reason));
+      if (m && /import|module|fetch|load|network|three|app\.js|ui\.js/i.test(m)) sawLoadError = true;
+    });
+
+    function autoRetryOnce() {
+      if (alreadyRetried) return false;           // hash already present — never loop
+      location.hash = GUARD;                       // mark the URL, then do a real reload
+      location.reload();
+      return true;
+    }
+
+    function showError(msg) {
+      var l = document.getElementById('loading');
+      if (!l) return;
+      l.innerHTML =
+        '<div style="text-align:center;max-width:360px;line-height:1.8">' +
+          '<div style="font-size:10px;letter-spacing:0.4em;text-transform:uppercase;color:rgba(235,240,248,0.45)">Celestial Explorer</div>' +
+          '<div style="font-size:11px;color:rgba(235,240,248,0.6);margin:14px 0 18px">' + msg + '</div>' +
+          '<button id="reloadBtn" style="border:1px solid rgba(235,240,248,0.25);border-radius:3px;padding:9px 18px;color:rgba(235,240,248,0.92);background:transparent;cursor:pointer;letter-spacing:0.08em">Reload</button>' +
+        '</div>';
+      var b = document.getElementById('reloadBtn');
+      if (b) b.onclick = function () {
+        // clear the guard so the manual attempt is a fresh single-shot
+        try { history.replaceState(null, '', location.pathname + location.search); } catch (_) {}
+        location.reload();
+      };
+    }
+
+    var WAIT_MS = 16000, FAST_MS = 5000, t0 = Date.now();
+    (function poll() {
+      if (booted()) return;                        // success — supervisor stands down
+      var dt = Date.now() - t0;
+      var failedOrTimedOut = (sawLoadError && dt >= FAST_MS) || dt >= WAIT_MS;
+      if (!failedOrTimedOut) { setTimeout(poll, 400); return; }
+      // First failure → one silent reload. Second time (hash present) → manual panel.
+      if (autoRetryOnce()) return;
+      showError(sawLoadError
+        ? 'Couldn’t load the 3D engine — the preview session likely expired. Reload to refresh it.'
+        : 'Taking longer than expected to start. Reload to try again.');
+    })();
+
+    // Once booted, strip the #reboot marker so a *future* stale session can self-heal too.
+    var clr = setInterval(function () {
+      if (booted()) {
+        clearInterval(clr);
+        if (location.hash.indexOf(GUARD) !== -1) {
+          try { history.replaceState(null, '', location.pathname + location.search); } catch (_) {}
+        }
+      }
+    }, 500);
+  })();
+</script>
+
+<script>
+  /* Mobile bottom-sheet menu: one launcher toggles the whole top-right cluster. */
+  (function () {
+    var fab = document.getElementById('menuFab');
+    var scrim = document.getElementById('sheetScrim');
+    var sheet = document.getElementById('topRight');
+    var lbl = fab && fab.querySelector('.fabLbl');
+    var wrapIds = ['bodiesWrap', 'eventsWrap', 'missionsWrap', 'styleWrap', 'viewWrap'];
+    function collapseAll() {
+      wrapIds.forEach(function (id) {
+        var w = document.getElementById(id);
+        if (w) w.classList.remove('open');
+      });
+    }
+    function setOpen(open) {
+      document.body.classList.toggle('sheet-open', open);
+      if (lbl) lbl.textContent = open ? 'Close' : 'Menu';
+      if (fab) fab.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+      if (!open) { collapseAll(); sheet.scrollTop = 0; }
+    }
+    if (fab) fab.addEventListener('click', function () {
+      setOpen(!document.body.classList.contains('sheet-open'));
+    });
+    if (scrim) scrim.addEventListener('click', function () { setOpen(false); });
+    addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && document.body.classList.contains('sheet-open')) setOpen(false);
+    });
+    /* a terminal pick (body / event / mission / search hit / tour) closes the sheet */
+    if (sheet) sheet.addEventListener('click', function (e) {
+      if (e.target.closest('#nav button, .evRow, .miRow, .srRow, #tourBtn')) {
+        setTimeout(function () { setOpen(false); }, 0);
+      }
+    });
+  })();
+</script>
+
+<!-- No import map: every module references three.js by relative path, so the app
+     boots on any ES-module browser — including iPadOS Safari older than 16.4,
+     which can't resolve bare import specifiers via an import map. -->
+<script type="module">
+  import './js/app.js';
+  import './js/ui.js';
+</script>
+</body>
+</html>
