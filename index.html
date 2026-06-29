@@ -9,7 +9,7 @@
     --ink: rgba(235, 240, 248, 0.92);
     --dim: rgba(235, 240, 248, 0.45);
     --faint: rgba(235, 240, 248, 0.22);
-    --pane: rgba(8, 12, 20, 0.72);
+    --pane: rgba(8, 12, 20, 0.95);
     --line: rgba(235, 240, 248, 0.12);
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -265,8 +265,12 @@
   #nav button.minor:hover, #nav button.minor.on { color: rgba(225, 215, 195, 0.95); background: rgba(235, 240, 248, 0.06); }
   #nav button.on { color: var(--ink); background: rgba(235, 240, 248, 0.09); }
 
+  /* keep an open dropdown above the search row (which comes later in the DOM) */
+  #bodiesWrap, #eventsWrap, #missionsWrap, #viewWrap, #styleWrap { position: relative; }
+  #bodiesWrap.open, #eventsWrap.open, #missionsWrap.open, #viewWrap.open, #styleWrap.open { z-index: 30; }
+
   /* ---- search ---- */
-  #searchWrap { flex-basis: 100%; display: flex; justify-content: flex-end; }
+  #searchWrap { flex-basis: 100%; display: flex; justify-content: flex-end; position: relative; z-index: 5; }
   #searchBox { position: relative; width: 230px; }
   .srIcon { position: absolute; left: 11px; top: 50%; width: 9px; height: 9px; margin-top: -5px; border: 1.4px solid var(--dim); border-radius: 50%; pointer-events: none; transition: border-color 0.2s; }
   .srIcon::after { content: ""; position: absolute; left: 7px; top: 8px; width: 4px; height: 1.4px; background: var(--dim); transform: rotate(45deg); transform-origin: left center; transition: background 0.2s; }
@@ -388,11 +392,82 @@
   #loading span { font-size: 10px; letter-spacing: 0.4em; text-transform: uppercase; color: var(--dim); animation: pulse 1.6s infinite; }
   @keyframes pulse { 50% { opacity: 0.3; } }
 
+  /* launcher + scrim are phone-only; hidden on desktop */
+  #menuFab, #sheetScrim { display: none; }
+
   @media (max-width: 768px) {
-    #topRight { top: 70px; max-width: calc(100vw - 36px); }
+    /* ---- launcher pill (top-right) ---- */
+    #menuFab {
+      display: inline-flex; align-items: center; gap: 8px; position: fixed;
+      top: 18px; right: 16px; z-index: 65;
+      background: var(--pane); border: 1px solid var(--line); border-radius: 3px;
+      color: var(--ink); font: 500 10px/1 "Helvetica Neue", Helvetica, sans-serif;
+      letter-spacing: 0.16em; text-transform: uppercase; padding: 10px 13px;
+      backdrop-filter: blur(14px); cursor: pointer;
+    }
+    #menuFab .bars { position: relative; display: inline-block; width: 13px; height: 9px; }
+    #menuFab .bars::before, #menuFab .bars::after, #menuFab .bars span {
+      content: ""; position: absolute; left: 0; right: 0; height: 1.4px;
+      background: currentColor; transition: transform 0.28s, opacity 0.2s;
+    }
+    #menuFab .bars::before { top: 0; }
+    #menuFab .bars span { top: 50%; margin-top: -0.7px; }
+    #menuFab .bars::after { bottom: 0; }
+    body.sheet-open #menuFab .bars::before { transform: translateY(3.8px) rotate(45deg); }
+    body.sheet-open #menuFab .bars::after { transform: translateY(-3.8px) rotate(-45deg); }
+    body.sheet-open #menuFab .bars span { opacity: 0; }
+
+    /* ---- scrim behind the sheet ---- */
+    #sheetScrim {
+      display: block; position: fixed; inset: 0; z-index: 55;
+      background: rgba(2, 5, 12, 0.55); opacity: 0; pointer-events: none;
+      transition: opacity 0.3s;
+    }
+    body.sheet-open #sheetScrim { opacity: 1; pointer-events: auto; }
+
+    /* ---- top-right cluster becomes a bottom sheet ---- */
+    #topRight {
+      top: auto; left: 0; right: 0; bottom: 0; max-width: none;
+      flex-direction: column; flex-wrap: nowrap; align-items: stretch;
+      gap: 0; justify-content: flex-start;
+      background: var(--pane); border-top: 1px solid var(--line);
+      border-radius: 14px 14px 0 0; backdrop-filter: blur(18px);
+      padding: 14px 16px calc(20px + env(safe-area-inset-bottom));
+      max-height: 82vh; overflow-y: auto; z-index: 60;
+      transform: translateY(106%); transition: transform 0.36s cubic-bezier(0.4, 0, 0.2, 1);
+      box-shadow: 0 -18px 50px rgba(0, 0, 0, 0.5);
+    }
+    body.sheet-open #topRight { transform: translateY(0); }
+    #topRight::before {
+      content: ""; align-self: center; flex: none; width: 36px; height: 4px;
+      border-radius: 99px; background: var(--line); margin-bottom: 12px;
+    }
+
+    /* search pinned to the top of the sheet, full width */
+    #searchWrap { order: -1; flex-basis: auto; display: block; margin-bottom: 4px; z-index: auto; }
+    #searchBox { width: 100%; }
+
+    /* triggers + tour as full-width list rows */
+    #bodiesWrap, #eventsWrap, #missionsWrap, #styleWrap, #viewWrap { width: 100%; position: static; }
+    #bodiesBtn, #eventsBtn, #missionsBtn, #styleBtn, #viewBtn, #tourBtn {
+      display: flex; align-items: center; justify-content: space-between;
+      width: 100%; text-align: left; padding: 16px 4px; min-height: 54px;
+      font-size: 12px; border: none; border-bottom: 1px solid var(--line);
+      border-radius: 0;
+    }
+    #tourBtn { color: var(--ink); }
+
+    /* open category flows inline (accordion) instead of floating over the page */
+    #bodiesWrap.open #bodiesMenu, #eventsWrap.open #eventsMenu,
+    #missionsWrap.open #missionsMenu, #styleWrap.open #styleMenu,
+    #viewWrap.open #viewMenu, #searchResults {
+      position: static; left: auto; right: auto; top: auto; bottom: auto;
+      width: auto; max-height: 44vh; overflow-y: auto;
+      border: none; border-radius: 0; background: rgba(235, 240, 248, 0.03);
+      backdrop-filter: none; padding: 4px 6px 12px;
+    }
   }
   @media (max-width: 720px) {
-    #topRight { max-width: calc(100vw - 32px); }
     #card { width: calc(100vw - 32px); right: 16px; top: auto; bottom: 96px; transform: translateY(10px); }
     #card.open { transform: translateY(0); }
     #speedCtl { width: 130px; }
@@ -419,6 +494,9 @@
   <div id="alt" class="mono"></div>
   <div id="scaleNote">* Planetary distances and sizes are true scale. Interstellar distances are compressed for navigation.</div>
 </div>
+
+<button id="menuFab" aria-label="Open menu"><span class="bars"><span></span></span><span class="fabLbl">Menu</span></button>
+<div id="sheetScrim"></div>
 
 <div class="ui" id="topRight">
   <div id="bodiesWrap">
@@ -581,6 +659,42 @@
         }
       }
     }, 500);
+  })();
+</script>
+
+<script>
+  /* Mobile bottom-sheet menu: one launcher toggles the whole top-right cluster. */
+  (function () {
+    var fab = document.getElementById('menuFab');
+    var scrim = document.getElementById('sheetScrim');
+    var sheet = document.getElementById('topRight');
+    var lbl = fab && fab.querySelector('.fabLbl');
+    var wrapIds = ['bodiesWrap', 'eventsWrap', 'missionsWrap', 'styleWrap', 'viewWrap'];
+    function collapseAll() {
+      wrapIds.forEach(function (id) {
+        var w = document.getElementById(id);
+        if (w) w.classList.remove('open');
+      });
+    }
+    function setOpen(open) {
+      document.body.classList.toggle('sheet-open', open);
+      if (lbl) lbl.textContent = open ? 'Close' : 'Menu';
+      if (fab) fab.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+      if (!open) { collapseAll(); sheet.scrollTop = 0; }
+    }
+    if (fab) fab.addEventListener('click', function () {
+      setOpen(!document.body.classList.contains('sheet-open'));
+    });
+    if (scrim) scrim.addEventListener('click', function () { setOpen(false); });
+    addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && document.body.classList.contains('sheet-open')) setOpen(false);
+    });
+    /* a terminal pick (body / event / mission / search hit / tour) closes the sheet */
+    if (sheet) sheet.addEventListener('click', function (e) {
+      if (e.target.closest('#nav button, .evRow, .miRow, .srRow, #tourBtn')) {
+        setTimeout(function () { setOpen(false); }, 0);
+      }
+    });
   })();
 </script>
 
