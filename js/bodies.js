@@ -377,6 +377,35 @@ function cometOrbitLine(c, segments = 360) {
 // low-frequency sinusoids of the vertex direction (smooth, seam-free, deterministic) so
 // the body reads as battered rock instead of a billiard ball. Bodies large enough to be
 // gravitationally rounded (the dwarf planets) keep a plain sphere.
+// ---------- International Space Station (stylised; exaggerated in scale so it's visible
+// against an Earth ~6.4 units wide — the real station is only ~110 m across) ----------
+function buildISS() {
+  const g = new THREE.Group();
+  const metal = new THREE.MeshStandardMaterial({ color: 0xcfd6dd, roughness: 0.5, metalness: 0.6 });
+  const gold  = new THREE.MeshStandardMaterial({ color: 0xc8a24a, roughness: 0.5, metalness: 0.5 });
+  const panel = new THREE.MeshStandardMaterial({ color: 0x16335c, emissive: 0x0a1c3e, emissiveIntensity: 0.55, roughness: 0.4, metalness: 0.2, side: THREE.DoubleSide });
+  const white = new THREE.MeshStandardMaterial({ color: 0xe9e7e0, roughness: 0.7, metalness: 0.1 });
+  // integrated truss (long spine along X)
+  g.add(new THREE.Mesh(new THREE.BoxGeometry(0.92, 0.05, 0.05), metal));
+  // pressurised modules (white cans along Z) + a perpendicular node
+  const hab = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.34, 16), white);
+  hab.rotation.x = Math.PI / 2; g.add(hab);
+  const node = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 0.12, 16), white);
+  node.rotation.z = Math.PI / 2; g.add(node);
+  // four solar-array wings — a pair at each end of the truss
+  const wingGeo = new THREE.BoxGeometry(0.34, 0.006, 0.17);
+  for (const ex of [-1, 1]) for (const ez of [-1, 1]) {
+    const w = new THREE.Mesh(wingGeo, panel);
+    w.position.set(ex * 0.34, 0, ez * 0.12);
+    g.add(w);
+  }
+  // central radiator panel (gold)
+  const rad = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.004, 0.1), gold);
+  rad.position.y = -0.07; g.add(rad);
+  g.scale.setScalar(0.85);
+  return g;
+}
+
 function lumpyGeometry(radius, seed, amp) {
   const geo = new THREE.SphereGeometry(radius, 72, 48);
   const p = geo.attributes.position;
@@ -798,6 +827,30 @@ export function buildScene(scene) {
   for (const m of MOONS) {
     const parent = registry[m.parent];
     const root = new THREE.Group();
+    if (m.tex === 'iss') {
+      // The ISS gets a bespoke model + findable marker instead of a textured sphere.
+      const station = buildISS();
+      station.userData.bodyId = m.id;
+      root.add(station);
+      const proxy = new THREE.Mesh(new THREE.SphereGeometry(0.6, 8, 6), new THREE.MeshBasicMaterial({ visible: false }));
+      proxy.userData.bodyId = m.id;
+      root.add(proxy);
+      const marker = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: glowTexture('rgba(150,200,255,1)', 'rgba(90,150,255,0)', 128, 0.4),
+        transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0.8,
+      }));
+      marker.scale.setScalar(1.6);
+      root.add(marker);
+      // inclined orbit ring hugging Earth
+      const seg = 160, pts = [];
+      for (let i = 0; i <= seg; i++) { const a = (i / seg) * Math.PI * 2; pts.push(new THREE.Vector3(Math.cos(a) * m.a, 0, -Math.sin(a) * m.a)); }
+      const oline = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: 0x5a86c0, transparent: true, opacity: 0.4 }));
+      if (m.inc) oline.rotation.x = m.inc;
+      parent.root.add(oline);
+      parent.root.add(root);
+      registry[m.id] = { body: m, isMoon: true, parentId: m.parent, root, mesh: station, spin: station, orbitLine: oline, proxy };
+      continue;
+    }
     let mat, geo;
     if (m.tex === 'moon') {
       // Hero treatment: real NASA albedo (LRO) + real elevation (LDEM) for crater

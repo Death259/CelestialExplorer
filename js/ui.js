@@ -102,7 +102,7 @@ function select(id, fly) {
   $('#cardFly').classList.remove('show');
   card.classList.add('open');
   document.querySelectorAll('#nav button').forEach(btn => btn.classList.toggle('on', btn.dataset.id === id));
-  if (fly) App.flyTo(id, registry[id].isComet ? { distAbs: 0.012 * AU } : { dist: id === 'sun' ? 6 : 4.5 });
+  if (fly) App.flyTo(id, registry[id].isComet ? { distAbs: 0.012 * AU } : id === 'iss' ? { distAbs: 20 } : { dist: id === 'sun' ? 6 : 4.5 });
 }
 $('#cardClose').addEventListener('click', () => { card.classList.remove('open'); selected = null; document.querySelectorAll('#nav button').forEach(b => b.classList.remove('on')); });
 App.select = select;
@@ -182,9 +182,9 @@ function showFarCard(o) {
   }
   const parentName = (pid) => (BODIES.find(x => x.id === pid) || {}).name || pid;
   for (const m of MOONS) {
-    const type = 'Moon of ' + parentName(m.parent);
+    const type = m.id === 'iss' ? 'Space station' : 'Moon of ' + parentName(m.parent);
     index.push({ name: m.name, type, dot: 'moon',
-      terms: (m.name + ' ' + type + ' moon').toLowerCase(), run: () => select(m.id, true) });
+      terms: (m.name + ' ' + type + ' moon station spacecraft').toLowerCase(), run: () => select(m.id, true) });
   }
   for (const c of COMETS) {
     index.push({ name: c.name, type: 'Comet', dot: 'comet',

@@ -78,6 +78,9 @@ export const MOONS = [
   { id: 'moon', name: 'Moon', parent: 'earth', radius: 1737.4 * KM, a: 384400 * KM, periodD: 27.322, tex: 'moon',
     facts: { 'Distance from Earth': '384,400 km', 'Orbit': '27.3 days', 'Gravity': '1/6 of Earth', 'Same face': 'Tidally locked' },
     blurb: 'The only other world humans have walked on. It stabilizes Earth\u2019s tilt — and our seasons.' },
+  { id: 'iss', name: 'ISS', parent: 'earth', radius: 0.05 * KM, a: 6779 * KM, periodD: 0.06453, tex: 'iss', inc: 0.9006,
+    facts: { 'Altitude': '~408 km', 'Speed': '27,600 km/h', 'Orbit': '92.9 min — 16 sunrises a day', 'Inclination': '51.6°', 'Crewed': 'Continuously since Nov 2000', 'Size': '109 m across — a football field' },
+    blurb: 'The largest structure humans have ever built in space. It laps the Earth every 93 minutes — fast enough to cross a continent in the time it takes to read this.' },
   { id: 'io', name: 'Io', parent: 'jupiter', radius: 1821.6 * KM, a: 421700 * KM, periodD: 1.769, tex: 'io',
     facts: { 'Volcanoes': '400+ active', 'Orbit': '1.8 days' }, blurb: 'The most volcanically active world in the solar system, kneaded by Jupiter\u2019s tides.' },
   { id: 'europa', name: 'Europa', parent: 'jupiter', radius: 1560.8 * KM, a: 671034 * KM, periodD: 3.551, tex: 'ice',
@@ -235,7 +238,10 @@ export function moonPosition(moon, dateMs, out) {
   // Other moons: illustrative circular orbits (not date-accurate ephemerides).
   const d = (dateMs - J2000) / DAY_MS;
   const ang = (d / moon.periodD) * 2 * Math.PI + (moon.a % 7); // phase offset
-  return out.set(Math.cos(ang) * moon.a, 0, -Math.sin(ang) * moon.a);
+  out.set(Math.cos(ang) * moon.a, 0, -Math.sin(ang) * moon.a);
+  // inclined orbits (e.g. the ISS's 51.6°): rotate the flat ring about the X axis
+  if (moon.inc) { const c = Math.cos(moon.inc), s = Math.sin(moon.inc), y = out.y, z = out.z; out.y = y * c - z * s; out.z = y * s + z * c; }
+  return out;
 }
 
 // Notable dates — jump the simulation to the exact moment and fly to the body.
