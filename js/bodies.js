@@ -379,12 +379,69 @@ function cometOrbitLine(c, segments = 360) {
 // gravitationally rounded (the dwarf planets) keep a plain sphere.
 // ---------- International Space Station (stylised; exaggerated in scale so it's visible
 // against an Earth ~6.4 units wide — the real station is only ~110 m across) ----------
+// ISS surface textures — generated on a canvas so the station carries real
+// detail (PV cells, thermal-blanket quilting, radiator fins) with no external assets.
+let _issSolar = null, _issMli = null, _issRad = null;
+function issMakeTex(c) {
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  return t;
+}
+function issSolarTexture() {
+  if (_issSolar) return _issSolar;
+  const W = 256, H = 256, c = document.createElement('canvas'); c.width = W; c.height = H;
+  const x = c.getContext('2d');
+  x.fillStyle = '#0a1f47'; x.fillRect(0, 0, W, H);
+  const cols = 8, rows = 16, cw = W / cols, ch = H / rows;
+  for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
+    const v = 0.78 + 0.22 * Math.sin(i * 1.7 + j * 0.9);
+    x.fillStyle = `rgb(${(16 * v) | 0},${(40 * v) | 0},${(92 * v) | 0})`;
+    x.fillRect(i * cw + 1, j * ch + 1, cw - 2, ch - 2);
+    x.strokeStyle = 'rgba(190,180,130,0.22)'; x.lineWidth = 1;       // cell busbar
+    x.beginPath(); x.moveTo(i * cw + cw * 0.5, j * ch); x.lineTo(i * cw + cw * 0.5, j * ch + ch); x.stroke();
+  }
+  x.strokeStyle = 'rgba(150,130,70,0.5)'; x.lineWidth = 1.5;          // gold gridlines
+  for (let i = 0; i <= cols; i++) { x.beginPath(); x.moveTo(i * cw, 0); x.lineTo(i * cw, H); x.stroke(); }
+  for (let j = 0; j <= rows; j++) { x.beginPath(); x.moveTo(0, j * ch); x.lineTo(W, j * ch); x.stroke(); }
+  return (_issSolar = issMakeTex(c));
+}
+function issMliTexture() {
+  if (_issMli) return _issMli;
+  const W = 256, H = 128, c = document.createElement('canvas'); c.width = W; c.height = H;
+  const x = c.getContext('2d');
+  x.fillStyle = '#e9e6dd'; x.fillRect(0, 0, W, H);
+  const n = 12, s = W / n;
+  for (let i = 0; i < n; i++) for (let j = 0; j * s < H; j++) {       // puffy quilt shading
+    const g = x.createRadialGradient(i * s + s / 2, j * s + s / 2, 1, i * s + s / 2, j * s + s / 2, s * 0.72);
+    g.addColorStop(0, 'rgba(255,255,255,0.30)'); g.addColorStop(1, 'rgba(150,140,120,0.14)');
+    x.fillStyle = g; x.fillRect(i * s, j * s, s, s);
+  }
+  for (let k = 0; k < 5; k++) { x.fillStyle = 'rgba(196,150,60,0.5)'; x.fillRect((k * 53) % W, (k * 37) % H, s * 1.5, s * 0.8); }
+  x.strokeStyle = 'rgba(120,115,100,0.35)'; x.lineWidth = 1;          // seams
+  for (let i = 0; i <= n; i++) { x.beginPath(); x.moveTo(i * s, 0); x.lineTo(i * s, H); x.stroke(); }
+  for (let j = 0; j * s <= H; j++) { x.beginPath(); x.moveTo(0, j * s); x.lineTo(W, j * s); x.stroke(); }
+  return (_issMli = issMakeTex(c));
+}
+function issRadiatorTexture() {
+  if (_issRad) return _issRad;
+  const W = 128, H = 64, c = document.createElement('canvas'); c.width = W; c.height = H;
+  const x = c.getContext('2d');
+  x.fillStyle = '#dfe3e8'; x.fillRect(0, 0, W, H);
+  x.strokeStyle = 'rgba(90,100,110,0.5)'; x.lineWidth = 1;
+  for (let i = 0; i < W; i += 6) { x.beginPath(); x.moveTo(i, 0); x.lineTo(i, H); x.stroke(); }
+  return (_issRad = issMakeTex(c));
+}
+
 function buildISS() {
   const g = new THREE.Group();
-  const metal = new THREE.MeshStandardMaterial({ color: 0xcfd6dd, roughness: 0.5, metalness: 0.6 });
-  const gold  = new THREE.MeshStandardMaterial({ color: 0xc8a24a, roughness: 0.5, metalness: 0.5 });
-  const panel = new THREE.MeshStandardMaterial({ color: 0x16335c, emissive: 0x0a1c3e, emissiveIntensity: 0.55, roughness: 0.4, metalness: 0.2, side: THREE.DoubleSide });
-  const white = new THREE.MeshStandardMaterial({ color: 0xe9e7e0, roughness: 0.7, metalness: 0.1 });
+  const metal = new THREE.MeshStandardMaterial({ color: 0xb9c1c9, roughness: 0.45, metalness: 0.7 });
+  const radTex = issRadiatorTexture(); radTex.repeat.set(2, 1);
+  const gold  = new THREE.MeshStandardMaterial({ map: radTex, color: 0xffffff, roughness: 0.4, metalness: 0.3, side: THREE.DoubleSide });
+  const solar = issSolarTexture(); solar.repeat.set(2, 1);
+  const panel = new THREE.MeshStandardMaterial({ map: solar, emissiveMap: solar, emissive: 0x3358a8, emissiveIntensity: 0.32, roughness: 0.45, metalness: 0.25, side: THREE.DoubleSide });
+  const mli = issMliTexture(); mli.repeat.set(3, 1);
+  const white = new THREE.MeshStandardMaterial({ map: mli, color: 0xffffff, roughness: 0.7, metalness: 0.15 });
   // integrated truss (long spine along X)
   g.add(new THREE.Mesh(new THREE.BoxGeometry(0.92, 0.05, 0.05), metal));
   // pressurised modules (white cans along Z) + a perpendicular node
@@ -399,7 +456,7 @@ function buildISS() {
     w.position.set(ex * 0.34, 0, ez * 0.12);
     g.add(w);
   }
-  // central radiator panel (gold)
+  // central radiator panel
   const rad = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.004, 0.1), gold);
   rad.position.y = -0.07; g.add(rad);
   g.scale.setScalar(0.85);

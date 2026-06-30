@@ -14,9 +14,18 @@ export const App = {};
 window.SolarApp = App;
 
 const canvas = document.getElementById('gl');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, logarithmicDepthBuffer: true, preserveDrawingBuffer: true });
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, logarithmicDepthBuffer: true, preserveDrawingBuffer: true, powerPreference: 'high-performance' });
 addEventListener('error', (e) => console.error('APP ERROR:', e.message, e.filename, e.lineno));
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+// Adaptive resolution: touch/coarse-pointer devices (phones, tablets) start at a
+// lower pixel-density cap, and a runtime controller scales density up/down by measured
+// FPS — full sharpness when the GPU keeps up, automatic relief when it can't. Fill
+// rate (and the bloom chain that runs over every pixel) scales with ratio², so this is
+// the single biggest mobile win and costs no features.
+const _coarse = (matchMedia && matchMedia('(pointer: coarse)').matches);
+const DPR_CAP = Math.min(devicePixelRatio || 1, _coarse ? 2 : 2);
+const DPR_FLOOR = Math.min(DPR_CAP, _coarse ? 1.0 : 1.25);
+let _dpr = _coarse ? Math.min(DPR_CAP, 1.5) : DPR_CAP;   // conservative start on mobile
+renderer.setPixelRatio(_dpr);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 
 const scene = new THREE.Scene();
@@ -38,6 +47,13 @@ const bloomPass = new UnrealBloomPass(new THREE.Vector2(1, 1), 1.0, 0.5, 0.82);
 composer.addPass(renderPass);
 composer.addPass(bloomPass);
 composer.addPass(new OutputPass());
+// Bloom is a multi-pass blur over every pixel — the heaviest always-on GPU cost. When
+// its strength is ~0 (user dialed it down, or photoreal mode) skip the pass entirely
+// instead of running all the blur passes just to multiply by zero.
+function setBloom(strength) {
+  bloomPass.strength = strength;
+  bloomPass.enabled = strength > 0.001;
+}
 
 // Scene content
 const world = buildScene(scene);
@@ -174,7 +190,7 @@ Artemis.setFollow = (on) => {
   if (on) {
     Artemis.active = true; Artemis.follow = true;
     // up close the fully-lit hull/Moon would bloom out — drop bloom + exposure
-    bloomPass.strength = 0.1;
+    bloomPass.strength = 0.1; bloomPass.enabled = true;
     renderer.toneMappingExposure = 0.92;
     // default fly-to framing is sun-safe (camera sits sunward of the target,
     // so the Sun stays behind the camera and out of frame)
@@ -221,7 +237,7 @@ const Style = { mode: 'cinematic' };
 App.Style = Style;
 function applyStyle() {
   const cine = Style.mode === 'cinematic';
-  bloomPass.strength = cine ? App.tweaks.bloom : App.tweaks.bloom * 0.25;
+  setBloom(cine ? App.tweaks.bloom : App.tweaks.bloom * 0.25);
   renderer.toneMappingExposure = cine ? 1.18 : 1.0;
   world.sun.glow.material.opacity = cine ? 1 : 0.55;
   document.body.classList.toggle('cinematic', cine);
@@ -246,6 +262,10 @@ const _aTmp2 = new THREE.Vector3();
 const _aFwd = new THREE.Vector3();
 const _mNear = new THREE.Vector3();   // reused: moon-orbit proximity test (avoids per-frame alloc)
 const FWD = new THREE.Vector3(0, 0, 1);
+// Static per-frame iteration lists, built once (rebuilding these every frame churned
+// ~1MB/s of garbage and caused a periodic GC hitch).
+const PLANETS = BODIES.slice(1);
+const ORBIT_LINE_BODIES = [...PLANETS, ...COMETS, ...MINORS];
 
 function updateArtemis() {
   const a = artemis;
@@ -296,11 +316,11 @@ function update(now) {
   }
   for (const m of MOONS) {
     const e = registry[m.id];
-    e.root.visible = App.tweaks.moons;
+    e.root.visible = App.tweaks.moons && (!m.since || Time.simMs >= m.since);
     // moons are children of planet root: local = helio - parentHelio
     e.root.position.copy(helio[m.id]).sub(helio[m.parent]);
   }
-  for (const ol of [...BODIES.slice(1), ...COMETS, ...MINORS]) {
+  for (const ol of ORBIT_LINE_BODIES) {
     registry[ol.id].orbitLine.position.copy(_v1.copy(f).multiplyScalar(-1));
   }
   for (const c of COMETS) registry[c.id].root.position.copy(helio[c.id]).sub(f);
@@ -404,7 +424,7 @@ function update(now) {
     for (const c of world.trojans.children) c.material.opacity = 0.7 * trojFade * (App.tweaks.trojans ? 1 : 0);
   }
   const orbitFade = (1 - THREE.MathUtils.smoothstep(dHelio, 1.5e7, 1.2e8)) * (App.tweaks.orbitLines ? 1 : 0);
-  for (const b of BODIES.slice(1)) {
+  for (const b of PLANETS) {
     registry[b.id].orbitLine.material.opacity = 0.35 * orbitFade;
     registry[b.id].orbitLine.visible = orbitFade > 0.01;
   }
@@ -422,7 +442,7 @@ function update(now) {
   for (const m of MOONS) {
     const e = registry[m.id];
     const near = _mNear.copy(helio[m.parent]).sub(cameraHelio()).length() < m.a * 60;
-    e.orbitLine.visible = near && App.tweaks.moonOrbits && App.tweaks.moons;
+    e.orbitLine.visible = near && App.tweaks.moonOrbits && App.tweaks.moons && (!m.since || Time.simMs >= m.since);
     e.orbitLine.material.opacity = 0.3;
   }
   // sun far-marker visibility
@@ -438,7 +458,11 @@ function update(now) {
   }
   controls.minDistance = radiusOf(Focus.id) * 1.12;
 
-  App.onFrame && App.onFrame({ dHelio, galT, conT, camDist: camDist(), now });
+  if (App.onFrame) {
+    const fs = update._frameState || (update._frameState = {});
+    fs.dHelio = dHelio; fs.galT = galT; fs.conT = conT; fs.camDist = camDist(); fs.now = now;
+    App.onFrame(fs);
+  }
 }
 
 // ---------------- Resize & loop ----------------
@@ -446,6 +470,9 @@ function resize() {
   const w = innerWidth, h = innerHeight;
   renderer.setSize(w, h);
   composer.setSize(w, h);
+  // Bloom is blurry by nature, so run its blur pyramid at half resolution — ~4× cheaper
+  // on the most expensive passes with no visible difference. The scene still renders full-res.
+  bloomPass.setSize(Math.max(1, w / 2), Math.max(1, h / 2));
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
 }
@@ -455,7 +482,44 @@ resize();
 renderer.setAnimationLoop((now) => {
   update(now);
   composer.render();
+  adaptResolution(now);
 });
+
+// FPS-driven resolution scaler. Samples once per second and only reacts to *sustained*
+// trends, so it settles to a stable level and then leaves the render targets alone
+// (each density change reallocates GPU targets — doing that repeatedly is itself a
+// stutter). If raising density ever backfires, the ceiling is lowered permanently so it
+// never oscillates around a bad level.
+let _afFrames = 0, _afAccum = 0, _afLast = performance.now(), _afLast2 = performance.now();
+let _slow = 0, _fast = 0, _dprCeil = DPR_CAP, _justRaised = false;
+function setDpr(v) {
+  v = Math.max(DPR_FLOOR, Math.min(DPR_CAP, v));
+  if (Math.abs(v - _dpr) < 0.01) return;
+  _dpr = v;
+  renderer.setPixelRatio(v);
+  composer.setPixelRatio(v);   // keep post-processing targets in sync
+}
+function adaptResolution(now) {
+  const dt = now - _afLast2; _afLast2 = now;
+  _afFrames++; _afAccum += Math.min(100, dt);
+  if (now - _afLast < 1000) return;
+  const fps = _afFrames * 1000 / _afAccum;
+  _afFrames = 0; _afAccum = 0; _afLast = now;
+  if (fps < 48) {
+    _fast = 0;
+    if (_justRaised) {                 // the last raise caused this slowdown — back off for good
+      _dprCeil = Math.max(DPR_FLOOR, _dpr - 0.25);
+      _justRaised = false;
+    }
+    if (++_slow >= 2 && _dpr > DPR_FLOOR) { setDpr(_dpr - 0.25); _slow = 0; }
+  } else if (fps > 57) {
+    _slow = 0; _justRaised = false;
+    // only climb after a long stretch of clear headroom, and never past the ceiling
+    if (++_fast >= 8 && _dpr < _dprCeil) { setDpr(_dpr + 0.25); _fast = 0; _justRaised = true; }
+  } else {
+    _slow = 0; _fast = 0;              // comfortably in band — hold steady
+  }
+}
 
 // expose for ui.js
 App.three = { THREE, scene, camera, controls, renderer, registry, helio, world, bloomPass, far };

@@ -30,6 +30,8 @@ function updateLabels() {
     const el = labels[id];
     const e = registry[id];
     _p.copy(helio[id]).sub(f);
+    // hide bodies that don't exist yet at the current sim time (e.g. ISS before 1998)
+    if (e.body.since && Time.simMs < e.body.since) { el.style.display = 'none'; continue; }
     const dist = _p.distanceTo(camera.position);
     const r = e.body.radius;
     _p.project(camera);
@@ -71,6 +73,7 @@ addEventListener('pointerup', (e) => {
     if (e.isMoon && !App.tweaks.moons) continue;
     if (e.isComet && !App.tweaks.comets) continue;
     if (e.isMinor && !App.tweaks.minors) continue;
+    if (e.body && e.body.since && Time.simMs < e.body.since) continue; // not in orbit yet
     if (e.proxy) meshes.push(e.proxy);
     if (e.mesh) meshes.push(e.mesh);
   }
@@ -93,6 +96,13 @@ addEventListener('pointerup', (e) => {
 const card = $('#card');
 let selected = null;
 function select(id, fly) {
+  const bdy = registry[id] && registry[id].body;
+  // Don't select bodies that don't exist yet at the current sim time (e.g. the ISS
+  // before its 1998 launch) — flying there would just frame empty space.
+  if (bdy && bdy.since && Time.simMs < bdy.since) {
+    flashToast(`<b>${bdy.name}</b>Not in orbit until ${new Date(bdy.since).getUTCFullYear()} — advance time to see it`);
+    return;
+  }
   selected = id;
   const b = registry[id].body;
   $('#cardName').textContent = b.name;
@@ -166,6 +176,9 @@ function showFarCard(o) {
 }
 
 // ---------------- Search (every named body + far-field object) ----------------
+// Menu actions (events, missions, view toggles, looks) register themselves here as the
+// sections below build their menus; the search merges them with the celestial index.
+const menuCommands = [];
 {
   const input = $('#searchInput');
   const resultsEl = $('#searchResults');
@@ -203,7 +216,7 @@ function showFarCard(o) {
       terms: (o.name + ' ' + type + ' ' + (o.sub || '')).toLowerCase(), run: () => showFarCard(o) });
   }
 
-  const CAT_ORDER = ['planet', 'star', 'moon', 'comet', 'dwarf', 'asteroid', 'probe', 'deep', 'edge', 'gal'];
+  const CAT_ORDER = ['planet', 'star', 'moon', 'comet', 'dwarf', 'asteroid', 'probe', 'deep', 'edge', 'gal', 'event', 'mission', 'view', 'look'];
   let matches = [], active = -1;
 
   // simple substring match: name-prefix beats name-substring beats other-terms
@@ -218,10 +231,10 @@ function showFarCard(o) {
   function render() {
     const q = input.value.trim().toLowerCase();
     if (!q) {
-      resultsEl.innerHTML = '<div class="srEmpty">Search any planet, moon, comet, star, or deep-sky object…</div>';
+      resultsEl.innerHTML = '<div class="srEmpty">Search planets, moons, events, missions, settings…</div>';
       resultsEl.classList.add('open'); matches = []; active = -1; return;
     }
-    matches = index.map(it => ({ it, s: score(it, q) })).filter(x => x.s >= 0)
+    matches = index.concat(menuCommands).map(it => ({ it, s: score(it, q) })).filter(x => x.s >= 0)
       .sort((a, b) => a.s - b.s
         || CAT_ORDER.indexOf(a.it.dot) - CAT_ORDER.indexOf(b.it.dot)
         || a.it.name.localeCompare(b.it.name))
@@ -381,13 +394,17 @@ const VIEW_ITEMS = [
     const row = document.createElement('div');
     row.className = 'viewRow' + (App.tweaks[k] ? ' on' : '');
     row.innerHTML = `<i></i><span>${name}</span>`;
-    row.addEventListener('click', () => {
+    const toggle = () => {
       const v = !App.tweaks[k];
       App.applyTweaks({ [k]: v });
       row.classList.toggle('on', v);
       saveView();
-    });
+      flashToast(`<b>${name}</b>${v ? 'On' : 'Off'}`);
+    };
+    row.addEventListener('click', toggle);
     menu.appendChild(row);
+    menuCommands.push({ name, type: 'View toggle', dot: 'view',
+      terms: (name + ' view toggle layer show hide ' + k).toLowerCase(), run: toggle });
   }
   $('#viewBtn').addEventListener('click', () => wrap.classList.toggle('open'));
   addEventListener('pointerdown', (e) => {
@@ -426,7 +443,12 @@ const LOOK_KEY = 'sol3d-look';
 
   // style toggle (keep panel open so sliders stay reachable)
   for (const row of menu.querySelectorAll('.viewRow')) {
-    row.addEventListener('click', () => { App.setStyleMode(row.dataset.mode); markStyle(row.dataset.mode); save(); });
+    const apply = () => { App.setStyleMode(row.dataset.mode); markStyle(row.dataset.mode); save(); };
+    row.addEventListener('click', apply);
+    const label = (row.textContent || row.dataset.mode).trim();
+    menuCommands.push({ name: label + ' look', type: 'Look', dot: 'look',
+      terms: (label + ' look style mode render ' + row.dataset.mode).toLowerCase(),
+      run: () => { apply(); flashToast(`<b>Look</b>${label}`); } });
   }
   // sliders
   bloomIn.addEventListener('input', () => {
@@ -449,6 +471,12 @@ const LOOK_KEY = 'sol3d-look';
 
 // ---------------- Events + date picker ----------------
 const eventCap = $('#eventCap');
+function flashToast(html) {
+  eventCap.innerHTML = html;
+  eventCap.classList.add('show');
+  clearTimeout(jumpTo._t);
+  jumpTo._t = setTimeout(() => eventCap.classList.remove('show'), 4200);
+}
 function jumpTo(ev) {
   Time.simMs = ev.when;
   Time.playing = false;
@@ -479,6 +507,8 @@ function jumpTo(ev) {
     row.innerHTML = `<div class="nm">${ev.name}</div><div class="dt">${ev.sub}</div>`;
     row.addEventListener('click', () => { jumpTo(ev); wrap.classList.remove('open'); });
     menu.appendChild(row);
+    menuCommands.push({ name: ev.name, type: 'Event' + (ev.cat ? ' \u00b7 ' + ev.cat : ''), dot: 'event', sub: ev.sub,
+      terms: (ev.name + ' ' + (ev.cat || '') + ' ' + (ev.sub || '') + ' event date').toLowerCase(), run: () => jumpTo(ev) });
   }
   $('#eventsBtn').addEventListener('click', () => wrap.classList.toggle('open'));
   addEventListener('pointerdown', (e) => { if (!e.target.closest('#eventsWrap')) wrap.classList.remove('open'); });
@@ -562,6 +592,8 @@ function startArtemis() {
     row.innerHTML = `<div class="nm">${m.name}</div><div class="sb">${m.sub}</div>`;
     row.addEventListener('click', () => { startArtemis(); wrap.classList.remove('open'); });
     menu.appendChild(row);
+    menuCommands.push({ name: m.name, type: 'Mission', dot: 'mission',
+      terms: (m.name + ' mission spacecraft launch artemis').toLowerCase(), run: () => startArtemis() });
   }
   $('#missionsBtn').addEventListener('click', () => wrap.classList.toggle('open'));
   addEventListener('pointerdown', (e) => { if (!e.target.closest('#missionsWrap')) wrap.classList.remove('open'); });
@@ -639,7 +671,7 @@ const fmtScale = (units) => {
 };
 // cache HUD nodes + last-written values so a static frame does zero DOM work / string churn
 const _hud = { date: $('#date'), alt: $('#alt'), scaleNote: $('#scaleNote') };
-let _lastDateMs = NaN, _lastAltStr = '', _lastScaleOp = -1;
+let _lastDateMs = NaN, _lastAltStr = '', _lastScaleOp = -1, _lastDU = -1, _lastFocusId = '';
 App.onFrame = ({ dHelio, galT, conT }) => {
   updateLabels();
   updateConLabels(conT);
@@ -647,9 +679,14 @@ App.onFrame = ({ dHelio, galT, conT }) => {
   // simMs only advances when playing/scrubbing — skip the Date()+string build on static frames
   const ms = Time.simMs;
   if (ms !== _lastDateMs) { _hud.date.textContent = fmtDate(ms); _lastDateMs = ms; }
+  // Only rebuild the altitude string when it could actually change — building it every
+  // frame (fmtScale + concatenation) is steady garbage that the GC has to sweep.
   const dU = Math.max(0, App.camDist() - registry[App.Focus.id].body.radius);
-  const altStr = fmtScale(dU) + (dU > 3.6e7 ? ' from ' : ' above ') + registry[App.Focus.id].body.name;
-  if (altStr !== _lastAltStr) { _hud.alt.textContent = altStr; _lastAltStr = altStr; }
+  if (Math.abs(dU - _lastDU) > Math.max(1, _lastDU * 1e-4) || App.Focus.id !== _lastFocusId) {
+    _lastDU = dU; _lastFocusId = App.Focus.id;
+    const altStr = fmtScale(dU) + (dU > 3.6e7 ? ' from ' : ' above ') + registry[App.Focus.id].body.name;
+    if (altStr !== _lastAltStr) { _hud.alt.textContent = altStr; _lastAltStr = altStr; }
+  }
   const scaleOp = galT > 0.05 ? 0.7 : 0;
   if (scaleOp !== _lastScaleOp) { _hud.scaleNote.style.opacity = scaleOp; _lastScaleOp = scaleOp; }
 
@@ -703,6 +740,7 @@ function updateConLabels(conT) {
 renderTime();
 setTimeout(() => $('#hint').classList.add('fade'), 7000);
 $('#loading').classList.add('fade');
+document.body.classList.add('loaded'); // reveal chrome that sits above the loading overlay (e.g. mobile menu FAB)
 setTimeout(() => { $('#loading').style.display = 'none'; }, 1700); // hard-hide even if transitions are throttled
 
 // initial cinematic: fly to Earth after a beat

@@ -79,6 +79,7 @@ export const MOONS = [
     facts: { 'Distance from Earth': '384,400 km', 'Orbit': '27.3 days', 'Gravity': '1/6 of Earth', 'Same face': 'Tidally locked' },
     blurb: 'The only other world humans have walked on. It stabilizes Earth\u2019s tilt — and our seasons.' },
   { id: 'iss', name: 'ISS', parent: 'earth', radius: 0.05 * KM, a: 6779 * KM, periodD: 0.06453, tex: 'iss', inc: 0.9006,
+    since: Date.UTC(1998, 10, 20),  // first module (Zarya) launched 20 Nov 1998 — hide before this
     facts: { 'Altitude': '~408 km', 'Speed': '27,600 km/h', 'Orbit': '92.9 min — 16 sunrises a day', 'Inclination': '51.6°', 'Crewed': 'Continuously since Nov 2000', 'Size': '109 m across — a football field' },
     blurb: 'The largest structure humans have ever built in space. It laps the Earth every 93 minutes — fast enough to cross a continent in the time it takes to read this.' },
   { id: 'io', name: 'Io', parent: 'jupiter', radius: 1821.6 * KM, a: 421700 * KM, periodD: 1.769, tex: 'io',
