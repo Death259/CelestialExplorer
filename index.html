@@ -270,20 +270,40 @@
   #bodiesWrap.open, #eventsWrap.open, #missionsWrap.open, #viewWrap.open, #styleWrap.open { z-index: 30; }
 
   /* ---- search ---- */
-  #searchWrap { flex-basis: 100%; display: flex; justify-content: flex-end; position: relative; z-index: 5; }
+  #searchWrap { flex-basis: 100%; display: flex; justify-content: flex-end; position: relative; z-index: 40; }
   #searchBox { position: relative; width: 230px; }
   .srIcon { position: absolute; left: 11px; top: 50%; width: 9px; height: 9px; margin-top: -5px; border: 1.4px solid var(--dim); border-radius: 50%; pointer-events: none; transition: border-color 0.2s; }
   .srIcon::after { content: ""; position: absolute; left: 7px; top: 8px; width: 4px; height: 1.4px; background: var(--dim); transform: rotate(45deg); transform-origin: left center; transition: background 0.2s; }
   #searchBox:focus-within .srIcon { border-color: var(--ink); }
   #searchBox:focus-within .srIcon::after { background: var(--ink); }
   #searchInput {
-    width: 100%; appearance: none; background: rgba(235, 240, 248, 0.05);
+    width: 100%; appearance: none; background: var(--pane);
     border: 1px solid var(--line); border-radius: 3px; color: var(--ink);
     font: 500 11px/1 "Helvetica Neue", Helvetica, sans-serif; letter-spacing: 0.06em;
     padding: 8px 11px 8px 28px; transition: border-color 0.2s, background 0.2s;
   }
   #searchInput::placeholder { color: var(--faint); letter-spacing: 0.08em; }
-  #searchInput:focus { outline: none; border-color: var(--dim); background: rgba(235, 240, 248, 0.08); }
+  #searchInput:focus { outline: none; border-color: var(--dim); background: var(--pane); }
+
+  /* system-matching scrollbar for the menu panels (replaces the default OS bar) */
+  #bodiesMenu, #eventsMenu, #missionsMenu, #styleMenu, #viewMenu, #searchResults, #topRight {
+    scrollbar-width: thin; scrollbar-color: rgba(235, 240, 248, 0.18) transparent;
+  }
+  #bodiesMenu::-webkit-scrollbar, #eventsMenu::-webkit-scrollbar, #missionsMenu::-webkit-scrollbar,
+  #styleMenu::-webkit-scrollbar, #viewMenu::-webkit-scrollbar, #searchResults::-webkit-scrollbar,
+  #topRight::-webkit-scrollbar { width: 8px; }
+  #bodiesMenu::-webkit-scrollbar-thumb, #eventsMenu::-webkit-scrollbar-thumb, #missionsMenu::-webkit-scrollbar-thumb,
+  #styleMenu::-webkit-scrollbar-thumb, #viewMenu::-webkit-scrollbar-thumb, #searchResults::-webkit-scrollbar-thumb,
+  #topRight::-webkit-scrollbar-thumb {
+    background: rgba(235, 240, 248, 0.18); border-radius: 99px;
+    border: 2px solid transparent; background-clip: padding-box;
+  }
+  #bodiesMenu::-webkit-scrollbar-thumb:hover, #eventsMenu::-webkit-scrollbar-thumb:hover, #missionsMenu::-webkit-scrollbar-thumb:hover,
+  #styleMenu::-webkit-scrollbar-thumb:hover, #viewMenu::-webkit-scrollbar-thumb:hover, #searchResults::-webkit-scrollbar-thumb:hover,
+  #topRight::-webkit-scrollbar-thumb:hover { background: rgba(235, 240, 248, 0.32); background-clip: padding-box; }
+  #bodiesMenu::-webkit-scrollbar-track, #eventsMenu::-webkit-scrollbar-track, #missionsMenu::-webkit-scrollbar-track,
+  #styleMenu::-webkit-scrollbar-track, #viewMenu::-webkit-scrollbar-track, #searchResults::-webkit-scrollbar-track,
+  #topRight::-webkit-scrollbar-track { background: transparent; }
   #searchResults {
     position: absolute; top: calc(100% + 8px); right: 0; width: 252px;
     background: var(--pane); border: 1px solid var(--line); border-radius: 4px;
@@ -303,6 +323,10 @@
   .srDot.deep { background: rgba(195, 185, 250, 0.8); }
   .srDot.edge { background: rgba(120, 195, 220, 0.8); }
   .srDot.gal { background: rgba(160, 180, 215, 0.85); }
+  .srDot.event { width: 6px; height: 6px; border-radius: 1px; transform: rotate(45deg); background: rgba(232, 172, 108, 0.9); }
+  .srDot.mission { width: 6px; height: 6px; border-radius: 0; background: none; border: 1px solid rgba(150, 215, 205, 0.95); }
+  .srDot.view { background: none; border: 1px solid rgba(150, 200, 255, 0.85); }
+  .srDot.look { background: rgba(205, 185, 250, 0.9); }
   .srTxt { min-width: 0; }
   .srName { font-size: 11.5px; letter-spacing: 0.04em; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .srType { font-size: 9px; letter-spacing: 0.13em; text-transform: uppercase; color: var(--dim); margin-top: 3px; }
@@ -404,7 +428,10 @@
       color: var(--ink); font: 500 10px/1 "Helvetica Neue", Helvetica, sans-serif;
       letter-spacing: 0.16em; text-transform: uppercase; padding: 10px 13px;
       backdrop-filter: blur(14px); cursor: pointer;
+      opacity: 0; pointer-events: none; transition: opacity 0.6s;
     }
+    /* don't reveal the launcher until the scene has loaded (it sits above the loader) */
+    body.loaded #menuFab { opacity: 1; pointer-events: auto; }
     #menuFab .bars { position: relative; display: inline-block; width: 13px; height: 9px; }
     #menuFab .bars::before, #menuFab .bars::after, #menuFab .bars span {
       content: ""; position: absolute; left: 0; right: 0; height: 1.4px;
